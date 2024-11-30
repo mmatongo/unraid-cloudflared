@@ -1,0 +1,128 @@
+Menu="NetworkServices"
+Type="xmenu"
+Title="Cloudflared"
+Icon="cloudflared.png"
+Tag="cloud"
+Tabs="true"
+---
+<?php
+/* Copyright 2024, Daniel M. Matongo
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version 2,
+ * as published by the Free Software Foundation.
+ */
+
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "$docroot/webGui/include/Helpers.php";
+require_once "$docroot/plugins/cloudflared/include/Config.php";
+require_once "$docroot/plugins/cloudflared/include/ServiceManager.php";
+require_once "$docroot/plugins/cloudflared/include/Logger.php";
+
+$config = Cloudflared\Config::getInstance();
+$service = new Cloudflared\ServiceManager();
+$logger = Cloudflared\Logger::getInstance();
+
+$tab = $_GET['tab'] ?? 'settings';
+$cloudflared_running = $service->isRunning();
+
+$status = $cloudflared_running ? "Running" : "Stopped";
+$status_color = $cloudflared_running ? "green-text" : "red-text";
+$token_status = empty($config->get('TUNNEL_TOKEN')) ?
+    "<span class='red-text'>Not Configured</span>" :
+    "<span class='green-text'>Configured</span>";
+
+$tunnel_info = "";
+if ($cloudflared_running) {
+    $tunnel_info = $service->getTunnelInfo();
+}
+?>
+
+<link type="text/css" rel="stylesheet" href="/plugins/cloudflared/assets/css/styles.php">
+
+<div class="cloudflared-container">
+    <div class="tab-nav">
+        <a href="/Settings/Cloudflared?tab=settings" class="<?=$tab=='settings'?'active':''?>">Settings</a>
+        <a href="/Settings/Cloudflared?tab=logs" class="<?=$tab=='logs'?'active':''?>">Logs</a>
+    </div>
+
+    <?php if ($tab == 'settings'): ?>
+    <div id="settings">
+        <div class="status-section">
+            <div class="form-grid">
+                <label>Service Status:</label>
+                <div><span class="<?=$status_color?>"><?=$status?></span></div>
+
+                <label>Tunnel Token:</label>
+                <div><?=$token_status?></div>
+
+                <?php if ($cloudflared_running && $tunnel_info): ?>
+                <label>Tunnel Info:</label>
+                <div><pre><?=htmlspecialchars($tunnel_info)?></pre></div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <form id="cloudflared_settings" method="POST">
+            <div class="settings-section">
+                <div class="form-grid">
+                    <label>Enable Service:</label>
+                    <select name="SERVICE" id="service_toggle" class="input-field">
+                        <?=mk_option($config->get('SERVICE'), "disabled", _("No"))?>
+                        <?=mk_option($config->get('SERVICE'), "enabled", _("Yes"))?>
+                    </select>
+                </div>
+
+                <div id="tunnel_settings" style="display:<?=$config->get('SERVICE')==='enabled'?'block':'none'?>">
+                    <div class="form-grid" style="margin-top:20px">
+                        <!-- Tunnel settings fields -->
+                        <?php foreach ($config->getSettingsFields() as $field): ?>
+                        <label><?=$field['label']?>:</label>
+                        <div class="setting-group">
+                            <?php if ($field['type'] === 'select'): ?>
+                                <select name="<?=$field['name']?>" class="input-field">
+                                    <?php foreach ($field['options'] as $value => $label): ?>
+                                        <?=mk_option($config->get($field['name']), $value, _($label))?>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <input type="<?=$field['type']?>"
+                                       name="<?=$field['name']?>"
+                                       value="<?=htmlspecialchars($config->get($field['name']))?>"
+                                       class="input-field"
+                                       <?=isset($field['placeholder']) ? "placeholder=\"{$field['placeholder']}\"" : ""?>
+                                       <?=isset($field['min']) ? "min=\"{$field['min']}\"" : ""?>
+                                       <?=isset($field['max']) ? "max=\"{$field['max']}\"" : ""?>>
+                            <?php endif; ?>
+                            <div class="help-text"><?=$field['help']?></div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" id="btnApply" disabled>Apply</button>
+                <button type="button" onclick="done()">Done</button>
+            </div>
+        </form>
+    </div>
+
+    <?php else: ?>
+    <div id="logs">
+        <div class="log-toolbar">
+            <button type="button" onclick="refreshLogs()">Refresh</button>
+            <button type="button" onclick="clearLogs()">Clear</button>
+            <label>
+                <input type="checkbox" id="autoRefresh" onclick="toggleAutoRefresh()"> Auto-refresh
+            </label>
+        </div>
+
+        <div class="log-container" id="logContent">
+            <?php echo $logger->getFormattedLogs(); ?>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<script src="/plugins/cloudflared/assets/js/app.php"></script>
