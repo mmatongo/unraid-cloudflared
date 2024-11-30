@@ -23,7 +23,7 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Build package
-        run: python build_plugin.py
+        run: python ./build
 
       - name: Get version from tag
         id: get_version
@@ -41,4 +41,4 @@ jobs:
           prerelease: false
           files: |
             build/cloudflared-utils-*.txz
-            build/plugin/cloudflared.plg 
+            build/plugin/cloudflared.plg
