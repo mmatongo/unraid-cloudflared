@@ -1,4 +1,3 @@
-set -e
 #!/bin/bash
 
 LOG_DIR="/var/log/cloudflared"
