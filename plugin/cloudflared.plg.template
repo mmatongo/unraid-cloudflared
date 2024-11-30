@@ -1,0 +1,201 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN>
+
+<PLUGIN
+  name="cloudflared"
+  author="{{AUTHOR}}"
+  version="{{VERSION}}"
+  launch="Settings/Cloudflared"
+  pluginURL="https://raw.githubusercontent.com/{{REPOSITORY}}/main/plugin/cloudflared.plg"
+  support="https://github.com/{{REPOSITORY}}/issues"
+  icon="cloudflared.png"
+  min="6.11.5"
+>
+
+<CHANGES>
+<![CDATA[
+###{{VERSION}}###
+- Initial release with UI and service management
+]]>
+</CHANGES>
+
+<FILE Name="/boot/config/plugins/cloudflared/cloudflared-{{CLOUDFLARED_VERSION}}">
+<URL>https://github.com/cloudflare/cloudflared/releases/download/{{CLOUDFLARED_VERSION}}/cloudflared-linux-amd64</URL>
+<SHA256>{{CLOUDFLARED_SHA256}}</SHA256>
+</FILE>
+
+<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz">
+<URL>https://github.com/{{REPOSITORY}}/releases/download/{{VERSION}}/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz</URL>
+<SHA256>{{PACKAGE_SHA256}}</SHA256>
+</FILE>
+
+<!--
+The 'install' script.
+-->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1"
+    logger -t cloudflared-install "$1"
+}
+
+verify_sha256() {
+    local file="$1"
+    local expected="$2"
+    local actual=$(sha256sum "$file" | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+        log "SHA256 verification failed for $file"
+        log "expected: $expected"
+        log "got: $actual"
+        return 1
+    fi
+    return 0
+}
+
+# Stop existing service if running
+if [ -f "/var/run/cloudflared.pid" ]; then
+    log "Stopping existing service..."
+    /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh stop
+    sleep 2
+fi
+
+# Install cloudflared binary
+if [ ! -f "/usr/local/sbin/cloudflared" ]; then
+    log "Installing cloudflared binary..."
+    cp /boot/config/plugins/cloudflared/cloudflared-{{CLOUDFLARED_VERSION}} /usr/local/sbin/cloudflared
+    if [ $? -ne 0 ]; then
+        log "Failed to copy cloudflared binary"
+        exit 1
+    fi
+    chmod +x /usr/local/sbin/cloudflared
+    verify_sha256 "/usr/local/sbin/cloudflared" "{{CLOUDFLARED_SHA256}}" || exit 1
+fi
+
+log "Creating required directories..."
+mkdir -p /boot/config/plugins/cloudflared/config
+mkdir -p /var/log/cloudflared
+chmod 755 /var/log/cloudflared
+
+if [ ! -f "/var/log/cloudflared/cloudflared.log" ]; then
+    log "Initializing log file..."
+    touch /var/log/cloudflared/cloudflared.log
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Cloudflared log initialized" > /var/log/cloudflared/cloudflared.log
+fi
+
+chmod 644 /var/log/cloudflared/cloudflared.log
+chown nobody:users /var/log/cloudflared/cloudflared.log
+
+# create default configuration if it doesn't exist
+if [ ! -f "/boot/config/plugins/cloudflared/config/cloudflared.cfg" ]; then
+    log "Creating default configuration..."
+    cat > "/boot/config/plugins/cloudflared/config/cloudflared.cfg" << EOF
+# Cloudflared configuration
+SERVICE="disabled"
+TUNNEL_TOKEN=""
+TUNNEL_RETRIES="5"
+TUNNEL_REGION=""
+TUNNEL_TRANSPORT_PROTOCOL="auto"
+TUNNEL_EDGE_BIND_ADDRESS=""
+TUNNEL_EDGE_IP_VERSION="auto"
+TUNNEL_GRACE_PERIOD="30s"
+TUNNEL_METRICS="0.0.0.0:46495"
+TUNNEL_LOGLEVEL="info"
+EOF
+    chmod 600 /boot/config/plugins/cloudflared/config/cloudflared.cfg
+fi
+
+# Install package
+log "Installing package..."
+upgradepkg --install-new /boot/config/plugins/cloudflared/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz
+
+# Set proper permissions
+log "Setting permissions..."
+chmod +x /usr/local/emhttp/plugins/cloudflared/scripts/*.sh
+find /usr/local/emhttp/plugins/cloudflared/include -name "*.php" -exec chmod 644 {} \;
+
+mkdir -p /var/local/emhttp/plugins/cloudflared
+echo "VERSION={{VERSION}}" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+
+cat > "/etc/logrotate.d/cloudflared" << EOF
+/var/log/cloudflared/cloudflared.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 nobody users
+    postrotate
+        /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh restart >/dev/null 2>&1 || true
+    endscript
+}
+EOF
+
+if grep -q '^SERVICE="enabled"' "/boot/config/plugins/cloudflared/config/cloudflared.cfg" 2>/dev/null; then
+    log "starting service..."
+    /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh start
+fi
+
+log "Installation completed successfully"
+echo ""
+echo "----------------------------------------------------"
+echo " Cloudflared has been installed."
+echo " Version: {{VERSION}}"
+echo " Access settings under NetworkServices"
+echo "----------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+<!--
+The 'remove' script.
+-->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1"
+    logger -t cloudflared-remove "$1"
+}
+
+# stop service and ensure it's stopped
+log "Stopping service..."
+/usr/local/emhttp/plugins/cloudflared/scripts/restart.sh stop
+sleep 2
+
+pkill -f cloudflared
+
+log "Removing binary..."
+rm -f /usr/local/sbin/cloudflared
+
+log "Removing package..."
+removepkg cloudflared-utils
+
+log "Cleaning up files..."
+rm -rf /usr/local/emhttp/plugins/cloudflared
+rm -f /etc/logrotate.d/cloudflared
+rm -f /var/run/cloudflared.pid
+rm -f /boot/config/plugins/cloudflared/cloudflared-*
+
+rm -rf /var/local/emhttp/plugins/cloudflared
+
+log "Removal completed successfully"
+
+echo ""
+echo "----------------------------------------------------"
+echo " Cloudflared has been removed."
+echo " Configuration and logs have been preserved at:"
+echo " /boot/config/plugins/cloudflared"
+echo " /var/log/cloudflared"
+echo " "
+echo " To remove these, run:"
+echo " rm -rf /boot/config/plugins/cloudflared /var/log/cloudflared"
+echo "----------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>
