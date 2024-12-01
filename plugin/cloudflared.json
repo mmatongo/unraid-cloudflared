@@ -2,7 +2,7 @@
     "name": "cloudflared",
     "author": "Daniel M. Matongo",
     "githubRepository": "mmatongo/unraid-cloudflared",
-    "version": "2024.11.11",
+    "version": "2024.11.11a",
     "cloudflaredVersion": "2024.11.1",
     "cloudflaredSHA256": "55d789465955ccfffcd61ba72807a2a4495002f7d9b7cc5eadcaa1f93c279d25",
     "packageVersion": "0.1.1",
