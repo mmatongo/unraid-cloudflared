@@ -106,13 +106,6 @@ class ServiceManager {
         return ['success' => true, 'message' => 'Configuration updated'];
     }
 
-    public function getTunnelInfo() {
-        if ($this->isRunning()) {
-            return shell_exec("cloudflared tunnel info 2>/dev/null");
-        }
-        return "";
-    }
-
     private function execute($command) {
         exec($command . ' 2>&1', $output, $returnCode);
         $output = implode("\n", $output);

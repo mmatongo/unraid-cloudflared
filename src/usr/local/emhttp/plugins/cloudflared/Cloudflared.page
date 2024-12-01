@@ -31,11 +31,6 @@ $status_color = $cloudflared_running ? "green-text" : "red-text";
 $token_status = empty($config->get('TUNNEL_TOKEN')) ?
     "<span class='red-text'>Not Configured</span>" :
     "<span class='green-text'>Configured</span>";
-
-$tunnel_info = "";
-if ($cloudflared_running) {
-    $tunnel_info = $service->getTunnelInfo();
-}
 ?>
 
 <link type="text/css" rel="stylesheet" href="/plugins/cloudflared/assets/css/styles.php">
@@ -55,11 +50,6 @@ if ($cloudflared_running) {
 
                 <label>Tunnel Token:</label>
                 <div><?=$token_status?></div>
-
-                <?php if ($cloudflared_running && $tunnel_info): ?>
-                <label>Tunnel Info:</label>
-                <div><pre><?=htmlspecialchars($tunnel_info)?></pre></div>
-                <?php endif; ?>
             </div>
         </div>
 

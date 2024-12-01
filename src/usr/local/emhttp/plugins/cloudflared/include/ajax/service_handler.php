@@ -42,7 +42,6 @@ try {
             $result = [
                 'success' => true,
                 'running' => $serviceManager->isRunning(),
-                'tunnelInfo' => $serviceManager->getTunnelInfo()
             ];
             echo json_encode($result);
             break;
