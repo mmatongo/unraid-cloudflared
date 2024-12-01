@@ -2,6 +2,7 @@
 $(function() {
     $('#cloudflared_settings').submit(function(event) {
         event.preventDefault();
+        $('#btnApply').prop('disabled', true);
 
         let formData = $(this).serializeArray();
         let config = {};
@@ -14,25 +15,18 @@ $(function() {
             config: config
         }, function(response) {
             if (response.success) {
-                addBannerSuccess('Changes applied successfully');
-               setTimeout(function() {
-                    window.location.reload();
-                }, 1000);
+                window.location.reload();
             } else {
-                addBannerError('Error: ' + response.message);
+                $('#btnApply').prop('disabled', false);
             }
         }, 'json')
         .fail(function(jqXHR, textStatus, errorThrown) {
-            addBannerError('Failed to apply changes: ' + errorThrown);
+            $('#btnApply').prop('disabled', false);
         });
     });
-
-    let form = document.querySelector('#cloudflared_settings');
-    if (form) {
-        form.addEventListener('change', function() {
-            document.querySelector('#btnApply').disabled = false;
-        });
-    }
+    $('#cloudflared_settings input, #cloudflared_settings select').on('input change', function() {
+        $('#btnApply').prop('disabled', false);
+    });
 
     const initialState = $('#service_toggle').val() === 'enabled';
     $('#tunnel_settings').toggle(initialState);
@@ -56,7 +50,6 @@ function refreshLogs() {
         })
         .fail(function(jqXHR, textStatus, errorThrown) {
             $('#logContent').html('<div class="log-line error">Failed to fetch logs: ' + errorThrown + '</div>');
-            addBannerError('Failed to fetch logs: ' + errorThrown);
         });
 }
 
@@ -65,10 +58,9 @@ function clearLogs() {
         .done(function(response) {
             $('#logContent').empty();
             $('#logContent').append('<div class="log-line">' + response + '</div>');
-            addBannerSuccess('logs cleared successfully');
         })
         .fail(function(jqXHR, textStatus, errorThrown) {
-            addBannerError('Failed to clear logs: ' + errorThrown);
+            $('#logContent').html('<div class="log-line error">Failed to clear logs: ' + errorThrown + '</div>');
         });
 }
 
@@ -83,7 +75,6 @@ function toggleAutoRefresh() {
                 console.error('Auto-refresh error:', error);
                 clearInterval(autoRefreshInterval);
                 $('#autoRefresh').prop('checked', false);
-                addBannerError('Auto-refresh failed: ' + error.message);
             }
         }, 5000);
     } else {
