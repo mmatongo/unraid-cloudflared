@@ -17,13 +17,17 @@
     display: grid;
     grid-template-columns: 200px 1fr;
     gap: 15px;
-    align-items: start;
+    align-items: center;
 }
 
 .form-grid label {
     font-weight: bold;
     color: #666;
-    padding-top: 8px;
+}
+
+.form-grid > div {
+    line-height: 1.5;
+    padding: 4px 0;
 }
 
 .help-text {
