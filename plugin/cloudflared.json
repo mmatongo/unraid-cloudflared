@@ -5,8 +5,8 @@
     "version": "2024.11.11",
     "cloudflaredVersion": "2024.11.1",
     "cloudflaredSHA256": "55d789465955ccfffcd61ba72807a2a4495002f7d9b7cc5eadcaa1f93c279d25",
-    "packageVersion": "0.1.0",
-    "packageSHA256": "e64ea41100725fe1759c9925e707ba504040d32b0b2208c6653d1b2358b85a4e",
+    "packageVersion": "0.1.1",
+    "packageSHA256": "4cb323089de456804fa4a5aea0e2972ea1bad5656e8d7833664b5ab075dc50d6",
     "pluginDirectory": "/usr/local/emhttp/plugins/cloudflared",
     "configDirectory": "/boot/config/plugins/cloudflared",
     "minver": "6.11.5"
