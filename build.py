@@ -242,7 +242,14 @@ class CloudflaredBuilder:
         with open(plugin_file, 'w') as f:
             f.write(content)
 
-        self.logger.info("Plugin file generated successfully")
+        repo_plugin_dir = self.root_dir / 'plugin'
+        repo_plugin_file = repo_plugin_dir / 'cloudflared.plg'
+
+        repo_plugin_dir.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(plugin_file, repo_plugin_file)
+
+        self.logger.info(f"Plugin file generated and copied to {repo_plugin_file}")
 
     def build(self) -> None:
         start_time = datetime.now()
