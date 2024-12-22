@@ -43,7 +43,7 @@ cloudflared_setup_logging() {
     notifempty
     postrotate
         /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh restart >/dev/null 2>&1 || true
-    create 644 root root
+    create 644 nobody users
 }
 EOL
 }

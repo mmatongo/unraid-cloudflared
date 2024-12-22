@@ -4,7 +4,7 @@
 <PLUGIN
   name="cloudflared"
   author="Daniel M. Matongo"
-  version="2024.12.2"
+  version="2024.12.2a"
   launch="Settings/Cloudflared"
   pluginURL="https://raw.githubusercontent.com/mmatongo/unraid-cloudflared/master/plugin/cloudflared.plg"
   support="https://github.com/mmatongo/unraid-cloudflared/issues"
@@ -14,9 +14,26 @@
 
 <CHANGES>
 <![CDATA[
+###2024.12.2a###
+
+- Minor fixes
+
 ###2024.12.2###
+
 - Updated to version 2024.12.2
 - Fixed some issues around updating
+
+###2024.11.11b###
+
+- Bug fixes
+
+###2024.11.11a###
+
+- Bug fixes
+
+###2024.11.11###
+- Initial release with UI and service management
+
 ]]>
 </CHANGES>
 
@@ -26,8 +43,8 @@
 </FILE>
 
 <FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.1.1-noarch-1.txz">
-<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2024.12.2/cloudflared-utils-0.1.1-noarch-1.txz</URL>
-<SHA256>25f09ed4cbb783c2c2432ebb6195835f8c7bd6845d2619054171ddea2d5c4bb7</SHA256>
+<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2024.12.2a/cloudflared-utils-0.1.1-noarch-1.txz</URL>
+<SHA256>95340ec08a0a5822547d9abd8d221ac4aea058200305f34736021d1a5796c694</SHA256>
 </FILE>
 
 <!--
@@ -116,7 +133,7 @@ chmod +x /usr/local/emhttp/plugins/cloudflared/scripts/*.sh
 find /usr/local/emhttp/plugins/cloudflared/include -name "*.php" -exec chmod 644 {} \;
 
 mkdir -p /var/local/emhttp/plugins/cloudflared
-echo "VERSION=2024.12.2" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+echo "VERSION=2024.12.2a" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 
 cat > "/etc/logrotate.d/cloudflared" << EOF
 /var/log/cloudflared/cloudflared.log {
@@ -142,7 +159,7 @@ log "Installation completed successfully"
 echo ""
 echo "----------------------------------------------------"
 echo " Cloudflared has been installed."
-echo " Version: 2024.12.2"
+echo " Version: 2024.12.2a"
 echo " Access settings under NetworkServices"
 echo "----------------------------------------------------"
 echo ""

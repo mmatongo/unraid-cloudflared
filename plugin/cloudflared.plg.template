@@ -15,8 +15,25 @@
 <CHANGES>
 <![CDATA[
 ###{{VERSION}}###
-- Updated to version {{VERSION}}
+
+- Minor fixes
+
+###2024.12.2###
+
+- Updated to version 2024.12.2
 - Fixed some issues around updating
+
+###2024.11.11b###
+
+- Bug fixes
+
+###2024.11.11a###
+
+- Bug fixes
+
+###2024.11.11###
+- Initial release with UI and service management
+
 ]]>
 </CHANGES>
 
