@@ -15,7 +15,8 @@
 <CHANGES>
 <![CDATA[
 ###{{VERSION}}###
-- Initial release with UI and service management
+- Updated to version {{VERSION}}
+- Fixed some issues around updating
 ]]>
 </CHANGES>
 
