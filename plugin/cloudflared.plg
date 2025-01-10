@@ -46,9 +46,9 @@
 <SHA256>8734f79dbdcb91e305fa48d837840c8c0d14f143ed390c516b86c2c292d9b368</SHA256>
 </FILE>
 
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.1.1-noarch-1.txz">
-<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2025.1.0/cloudflared-utils-0.1.1-noarch-1.txz</URL>
-<SHA256>163b5c77acbb92dc5d85d0ba287d5b92de214a9509a2f1cf7d20b5654f85f53b</SHA256>
+<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.2.0-noarch-1.txz">
+<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2025.1.0/cloudflared-utils-0.2.0-noarch-1.txz</URL>
+<SHA256>212ad7072114a2878a24047557ecf9096f701eda05783fedf05a9420cdecfabb</SHA256>
 </FILE>
 
 <!--
@@ -129,7 +129,7 @@ fi
 
 # Install package
 log "Installing package..."
-upgradepkg --install-new /boot/config/plugins/cloudflared/cloudflared-utils-0.1.1-noarch-1.txz
+upgradepkg --install-new /boot/config/plugins/cloudflared/cloudflared-utils-0.2.0-noarch-1.txz
 
 # Set proper permissions
 log "Setting permissions..."
