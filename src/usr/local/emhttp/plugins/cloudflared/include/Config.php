@@ -83,8 +83,8 @@ class Config {
                 'name' => 'TUNNEL_REGION',
                 'label' => 'Region',
                 'type' => 'select',
-                'options' => ['us' => 'United States'],
-                'help' => 'Region to connect to. Only US is supported at this time.',
+                'options' => ['us' => 'United States', '' => 'Global'],
+                'help' => 'Region to connect to. Only US is supported at this time. Omit to use the global network.',
                 'default' => 'us'
             ],
             [
