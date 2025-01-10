@@ -4,7 +4,7 @@
 <PLUGIN
   name="cloudflared"
   author="Daniel M. Matongo"
-  version="2024.12.2a"
+  version="2025.1.0"
   launch="Settings/Cloudflared"
   pluginURL="https://raw.githubusercontent.com/mmatongo/unraid-cloudflared/master/plugin/cloudflared.plg"
   support="https://github.com/mmatongo/unraid-cloudflared/issues"
@@ -14,6 +14,10 @@
 
 <CHANGES>
 <![CDATA[
+###2025.1.0###
+
+- Updated to version 2025.1.0
+
 ###2024.12.2a###
 
 - Minor fixes
@@ -37,14 +41,14 @@
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-2024.12.2">
-<URL>https://github.com/cloudflare/cloudflared/releases/download/2024.12.2/cloudflared-linux-amd64</URL>
-<SHA256>5237675a5e806120729acc78c5be02f9db5f406717699587abfa72b49b39fe40</SHA256>
+<FILE Name="/boot/config/plugins/cloudflared/cloudflared-2025.1.0">
+<URL>https://github.com/cloudflare/cloudflared/releases/download/2025.1.0/cloudflared-linux-amd64</URL>
+<SHA256>8734f79dbdcb91e305fa48d837840c8c0d14f143ed390c516b86c2c292d9b368</SHA256>
 </FILE>
 
 <FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.1.1-noarch-1.txz">
-<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2024.12.2a/cloudflared-utils-0.1.1-noarch-1.txz</URL>
-<SHA256>95340ec08a0a5822547d9abd8d221ac4aea058200305f34736021d1a5796c694</SHA256>
+<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2025.1.0/cloudflared-utils-0.1.1-noarch-1.txz</URL>
+<SHA256>163b5c77acbb92dc5d85d0ba287d5b92de214a9509a2f1cf7d20b5654f85f53b</SHA256>
 </FILE>
 
 <!--
@@ -81,13 +85,13 @@ fi
 # Install cloudflared binary
 if [ ! -f "/usr/local/sbin/cloudflared" ]; then
     log "Installing cloudflared binary..."
-    cp /boot/config/plugins/cloudflared/cloudflared-2024.12.2 /usr/local/sbin/cloudflared
+    cp /boot/config/plugins/cloudflared/cloudflared-2025.1.0 /usr/local/sbin/cloudflared
     if [ $? -ne 0 ]; then
         log "Failed to copy cloudflared binary"
         exit 1
     fi
     chmod +x /usr/local/sbin/cloudflared
-    verify_sha256 "/usr/local/sbin/cloudflared" "5237675a5e806120729acc78c5be02f9db5f406717699587abfa72b49b39fe40" || exit 1
+    verify_sha256 "/usr/local/sbin/cloudflared" "8734f79dbdcb91e305fa48d837840c8c0d14f143ed390c516b86c2c292d9b368" || exit 1
 fi
 
 log "Creating required directories..."
@@ -133,7 +137,7 @@ chmod +x /usr/local/emhttp/plugins/cloudflared/scripts/*.sh
 find /usr/local/emhttp/plugins/cloudflared/include -name "*.php" -exec chmod 644 {} \;
 
 mkdir -p /var/local/emhttp/plugins/cloudflared
-echo "VERSION=2024.12.2a" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+echo "VERSION=2025.1.0" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 
 cat > "/etc/logrotate.d/cloudflared" << EOF
 /var/log/cloudflared/cloudflared.log {
@@ -159,7 +163,7 @@ log "Installation completed successfully"
 echo ""
 echo "----------------------------------------------------"
 echo " Cloudflared has been installed."
-echo " Version: 2024.12.2a"
+echo " Version: 2025.1.0"
 echo " Access settings under NetworkServices"
 echo "----------------------------------------------------"
 echo ""
