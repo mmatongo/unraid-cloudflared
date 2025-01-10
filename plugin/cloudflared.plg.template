@@ -16,7 +16,11 @@
 <![CDATA[
 ###{{VERSION}}###
 
-- Updated to version {{VERSION}}
+- Added changes to clean up old versions
+
+###2025.1.0###
+
+- Updated to version 2025.1.0
 
 ###2024.12.2a###
 
@@ -82,17 +86,21 @@ if [ -f "/var/run/cloudflared.pid" ]; then
     sleep 2
 fi
 
-# Install cloudflared binary
-if [ ! -f "/usr/local/sbin/cloudflared" ]; then
-    log "Installing cloudflared binary..."
-    cp /boot/config/plugins/cloudflared/cloudflared-{{CLOUDFLARED_VERSION}} /usr/local/sbin/cloudflared
-    if [ $? -ne 0 ]; then
-        log "Failed to copy cloudflared binary"
-        exit 1
-    fi
-    chmod +x /usr/local/sbin/cloudflared
-    verify_sha256 "/usr/local/sbin/cloudflared" "{{CLOUDFLARED_SHA256}}" || exit 1
+# Remove existing plugin directory to ensure clean install
+if [ -d "/usr/local/emhttp/plugins/cloudflared" ]; then
+    log "Removing existing plugin installation..."
+    rm -rf /usr/local/emhttp/plugins/cloudflared
 fi
+
+# Install cloudflared binary
+log "Installing cloudflared binary..."
+cp /boot/config/plugins/cloudflared/cloudflared-{{CLOUDFLARED_VERSION}} /usr/local/sbin/cloudflared
+if [ $? -ne 0 ]; then
+    log "Failed to copy cloudflared binary"
+    exit 1
+fi
+chmod +x /usr/local/sbin/cloudflared
+verify_sha256 "/usr/local/sbin/cloudflared" "{{CLOUDFLARED_SHA256}}" || exit 1
 
 log "Creating required directories..."
 mkdir -p /boot/config/plugins/cloudflared/config
@@ -129,15 +137,22 @@ fi
 
 # Install package
 log "Installing package..."
-upgradepkg --install-new /boot/config/plugins/cloudflared/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz
+upgradepkg --install-new --reinstall /boot/config/plugins/cloudflared/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz
 
 # Set proper permissions
 log "Setting permissions..."
 chmod +x /usr/local/emhttp/plugins/cloudflared/scripts/*.sh
 find /usr/local/emhttp/plugins/cloudflared/include -name "*.php" -exec chmod 644 {} \;
 
+# Create version file with branch information
 mkdir -p /var/local/emhttp/plugins/cloudflared
 echo "VERSION={{VERSION}}" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+echo "BRANCH=master" >> /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+
+# Cleanup old versions
+log "Cleaning up old versions..."
+rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-utils-*.txz 2>/dev/null | grep -v '{{PACKAGE_VERSION}}')
+rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-* 2>/dev/null | grep -v '{{CLOUDFLARED_VERSION}}')
 
 cat > "/etc/logrotate.d/cloudflared" << EOF
 /var/log/cloudflared/cloudflared.log {
