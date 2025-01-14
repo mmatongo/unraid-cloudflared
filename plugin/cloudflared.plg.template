@@ -16,9 +16,11 @@
 <![CDATA[
 ###{{VERSION}}###
 
-- Add support for empty TUNNEL_REGION
+- minor changes
 
 ###2025.1.0b###
+
+- Add support for empty TUNNEL_REGION
 
 - Added changes to clean up old versions
 
