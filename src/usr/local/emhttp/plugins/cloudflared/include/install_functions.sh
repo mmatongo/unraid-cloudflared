@@ -55,12 +55,3 @@ cloudflared_install_completion() {
         chmod 644 /etc/bash_completion.d/cloudflared
     fi
 }
-
-cloudflared_migrate_config() {
-    if [ -f "/boot/config/plugins/cloudflared/config/token" ]; then
-        cloudflared_log "Migrating existing token to new configuration..."
-        token=$(cat "/boot/config/plugins/cloudflared/config/token")
-        sed -i "s/TUNNEL_TOKEN=\"\"/TUNNEL_TOKEN=\"$token\"/" "/boot/config/plugins/cloudflared/config/cloudflared.cfg"
-        rm "/boot/config/plugins/cloudflared/config/token"
-    fi
-}
