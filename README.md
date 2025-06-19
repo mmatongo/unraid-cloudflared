@@ -15,9 +15,11 @@ This installs Cloudflared on Unraid as a plugin.
 2. Navigate to the "Plugins" tab.
 3. Click on "Install Plugin".
 4. Enter the URL for the latest release of the plugin.
-    ```
-    https://github.com/mmatongo/unraid-cloudflared/releases
-    ```
+
+```
+https://github.com/mmatongo/unraid-cloudflared/releases
+```
+
 5. Click "Install".
 6. After installation, you can configure Cloudflared through the Unraid web UI.
 
