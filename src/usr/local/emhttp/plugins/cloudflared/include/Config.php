@@ -29,7 +29,8 @@ class Config {
             'TUNNEL_EDGE_IP_VERSION' => 'auto',
             'TUNNEL_GRACE_PERIOD' => '30s',
             'TUNNEL_METRICS' => '0.0.0.0:46495',
-            'TUNNEL_LOGLEVEL' => 'info'
+            'TUNNEL_LOGLEVEL' => 'info',
+            'TUNNEL_ORIGIN_CERT' => ''
         ];
     }
 
@@ -117,6 +118,12 @@ class Config {
                 'label' => 'Log Level',
                 'type' => 'select',
                 'options' => ['info' => 'Info', 'warn' => 'Warn', 'error' => 'Error', 'debug' => 'Debug', 'fatal' => 'Fatal']
+            ],
+            [
+                'name' => 'TUNNEL_ORIGIN_CERT',
+                'label' => 'Origin Certificate',
+                'type' => 'textarea',
+                'help' => 'Optional. Paste your Cloudflare origin certificate here if you want to use a custom one.'
             ]
         ];
     }
