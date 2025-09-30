@@ -122,7 +122,7 @@ class Config {
             [
                 'name' => 'TUNNEL_ORIGIN_CERT',
                 'label' => 'Origin Certificate',
-                'type' => 'textarea',
+                'type' => 'text',
                 'help' => 'Optional. Paste your Cloudflare origin certificate here if you want to use a custom one.'
             ]
         ];
