@@ -44,4 +44,4 @@ jobs:
           prerelease: false
           files: |
             build/cloudflared-utils-*.txz
-            build/plugin/cloudflared.plg
+            plugin/cloudflared.plg
