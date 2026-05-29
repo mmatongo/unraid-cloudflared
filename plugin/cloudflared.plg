@@ -81,7 +81,7 @@
 
 <FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.3.2-noarch-1.txz">
 <URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2026.5.2/cloudflared-utils-0.3.2-noarch-1.txz</URL>
-<SHA256>898e10e0f8d0dd36f93ac7e3932fd07547a4d757c3e8efbc82c03de4a905d6d9</SHA256>
+<SHA256>fc158ae314e41d28f7a4202de1dc1cf94d3fa2401ba92c85f2e2fc7ca3da5d1a</SHA256>
 </FILE>
 
 <!--
