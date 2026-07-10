@@ -4,7 +4,7 @@
 <PLUGIN
   name="cloudflared"
   author="Daniel M. Matongo"
-  version="2026.5.2"
+  version="2026.7.1"
   launch="Settings/Cloudflared"
   pluginURL="https://raw.githubusercontent.com/mmatongo/unraid-cloudflared/master/plugin/cloudflared.plg"
   support="https://github.com/mmatongo/unraid-cloudflared/issues"
@@ -14,6 +14,10 @@
 
 <CHANGES>
 <![CDATA[
+###2026.7.1###
+
+- Updated to version 2026.7.1
+
 ###2026.5.2###
 
 - Updated to version 2026.5.2
@@ -74,14 +78,14 @@
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-2026.5.2">
-<URL>https://github.com/cloudflare/cloudflared/releases/download/2026.5.2/cloudflared-linux-amd64</URL>
-<SHA256>5286698547f03df745adb2355f04c12dde52ef425491e81f433642d695521886</SHA256>
+<FILE Name="/boot/config/plugins/cloudflared/cloudflared-2026.7.1">
+<URL>https://github.com/cloudflare/cloudflared/releases/download/2026.7.1/cloudflared-linux-amd64</URL>
+<SHA256>79a0ade7fc854f62c1aaef48424d9d979e8c2fcd039189d24db82b84cd146be1</SHA256>
 </FILE>
 
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.3.2-noarch-1.txz">
-<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2026.5.2/cloudflared-utils-0.3.2-noarch-1.txz</URL>
-<SHA256>4180008ad2ee81cefc8556dbdd961f1688ae5ee3636954c5bee99a360b468722</SHA256>
+<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.4.0-noarch-1.txz">
+<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2026.7.1/cloudflared-utils-0.4.0-noarch-1.txz</URL>
+<SHA256>449886ce6bbc07af9e9cfca4839819bc2301167dc2faa7f5cde4b682c70a9bc4</SHA256>
 </FILE>
 
 <!--
@@ -123,13 +127,13 @@ fi
 
 # Install cloudflared binary
 log "Installing cloudflared binary..."
-cp /boot/config/plugins/cloudflared/cloudflared-2026.5.2 /usr/local/sbin/cloudflared
+cp /boot/config/plugins/cloudflared/cloudflared-2026.7.1 /usr/local/sbin/cloudflared
 if [ $? -ne 0 ]; then
     log "Failed to copy cloudflared binary"
     exit 1
 fi
 chmod +x /usr/local/sbin/cloudflared
-verify_sha256 "/usr/local/sbin/cloudflared" "5286698547f03df745adb2355f04c12dde52ef425491e81f433642d695521886" || exit 1
+verify_sha256 "/usr/local/sbin/cloudflared" "79a0ade7fc854f62c1aaef48424d9d979e8c2fcd039189d24db82b84cd146be1" || exit 1
 
 log "Creating required directories..."
 mkdir -p /boot/config/plugins/cloudflared/config
@@ -166,7 +170,7 @@ fi
 
 # Install package
 log "Installing package..."
-upgradepkg --install-new --reinstall /boot/config/plugins/cloudflared/cloudflared-utils-0.3.2-noarch-1.txz
+upgradepkg --install-new --reinstall /boot/config/plugins/cloudflared/cloudflared-utils-0.4.0-noarch-1.txz
 
 # Set proper permissions
 log "Setting permissions..."
@@ -175,13 +179,13 @@ find /usr/local/emhttp/plugins/cloudflared/include -name "*.php" -exec chmod 644
 
 # Create version file with branch information
 mkdir -p /var/local/emhttp/plugins/cloudflared
-echo "VERSION=2026.5.2" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+echo "VERSION=2026.7.1" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 echo "BRANCH=master" >> /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 
 # Cleanup old versions
 log "Cleaning up old versions..."
-rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-utils-*.txz 2>/dev/null | grep -v '0.3.2')
-rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-* 2>/dev/null | grep -v '2026.5.2')
+rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-utils-*.txz 2>/dev/null | grep -v '0.4.0')
+rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-* 2>/dev/null | grep -v '2026.7.1')
 
 cat > "/etc/logrotate.d/cloudflared" << EOF
 /var/log/cloudflared/cloudflared.log {
@@ -207,7 +211,7 @@ log "Installation completed successfully"
 echo ""
 echo "----------------------------------------------------"
 echo " Cloudflared has been installed."
-echo " Version: 2026.5.2"
+echo " Version: 2026.7.1"
 echo " Access settings under NetworkServices"
 echo "----------------------------------------------------"
 echo ""
