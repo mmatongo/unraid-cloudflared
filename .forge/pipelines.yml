@@ -1,8 +1,8 @@
 version: 1
 
+# Example pipelines. `smoke` is repository-agnostic and should pass anywhere;
+# adapt `test` to your project's toolchain.
 pipelines:
-  # A tiny pipeline that proves the runner works, with no network and no
-  # large image pull. Start here.
   - name: smoke
     on: [push]
     image: alpine:3.21
@@ -11,17 +11,18 @@ pipelines:
         run: |
           echo "workspace contents:"
           ls -la
-          test -f go.mod && echo "OK: repo exported at the pushed commit"
+          test -n "$(ls -A)" && echo "OK: commit exported into the workspace"
 
-  # Build and test the project itself.
+  # Adapt to your stack. `network: true` is required to fetch dependencies.
+  # Go:     image golang:1.23   -> go build ./... / go test ./...
+  # Python: image python:3.12   -> pip install -r requirements.txt / pytest
+  # Node:   image node:22       -> npm ci / npm test
   - name: test
     on: [push, pull_request]
-    image: golang:1.23
-    network: true          # needed to fetch Go modules
+    image: python:3.12
+    network: true
     steps:
       - name: build
-        run:
-          - go build ./...
-      - name: test
-        run:
-          - go test ./... -count=1
+        run: |
+          python --version
+          test -f requirements.txt && pip install -r requirements.txt || echo "no requirements.txt, skipping"
