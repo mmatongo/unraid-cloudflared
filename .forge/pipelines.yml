@@ -1,7 +1,19 @@
 version: 1
 
 pipelines:
-  # Build and test forge itself. Runs on every push to any branch.
+  # A tiny pipeline that proves the runner works, with no network and no
+  # large image pull. Start here.
+  - name: smoke
+    on: [push]
+    image: alpine:3.21
+    steps:
+      - name: checkout-contents
+        run: |
+          echo "workspace contents:"
+          ls -la
+          test -f go.mod && echo "OK: repo exported at the pushed commit"
+
+  # Build and test the project itself.
   - name: test
     on: [push, pull_request]
     image: golang:1.23
@@ -13,14 +25,3 @@ pipelines:
       - name: test
         run:
           - go test ./... -count=1
-
-  # A tiny pipeline to prove the runner works without pulling a large image.
-  - name: smoke
-    on: [push]
-    image: alpine:3.20
-    steps:
-      - name: checkout-contents
-        run:
-          - echo "workspace contents:"
-          - ls -la
-          - test -f go.mod && echo "OK: repo exported at the pushed commit"
