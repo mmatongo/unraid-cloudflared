@@ -98,3 +98,54 @@ $(document).ready(function() {
         toggleAutoRefresh();
     }
 });
+
+const updateUrl = '/plugins/cloudflared/include/ajax/update_handler.php';
+let latestVersion = '';
+
+function updateMsg(text, isError) {
+    $('#cf_update_msg').text(text).css('color', isError ? '#c00' : '');
+}
+
+function loadUpdateStatus() {
+    $.post(updateUrl, {action: 'status'}, function(r) {
+        $('#cf_installed').text(r.installed || 'unknown');
+        $('#update_check').val(r.UPDATE_CHECK);
+        $('#update_auto').prop('checked', r.UPDATE_AUTO === 'yes');
+    }, 'json');
+}
+
+function checkUpdates() {
+    $('#btnCheck').prop('disabled', true);
+    updateMsg('Checking...');
+    $.post(updateUrl, {action: 'check'}, function(r) {
+        latestVersion = r.latest;
+        $('#cf_latest').text(r.latest);
+        $('#btnInstall').prop('disabled', !r.newer);
+        updateMsg(r.newer ? 'A newer version is available.' : 'Up to date.');
+    }, 'json').fail(function(x) {
+        updateMsg((x.responseJSON && x.responseJSON.message) || 'Check failed', true);
+    }).always(function() { $('#btnCheck').prop('disabled', false); });
+}
+
+function installUpdate() {
+    if (!latestVersion || !confirm('Install cloudflared ' + latestVersion + '? The tunnel will restart for a few seconds.')) {
+        return;
+    }
+    $('#btnInstall, #btnCheck').prop('disabled', true);
+    updateMsg('Downloading, verifying and restarting...');
+    $.post(updateUrl, {action: 'install', version: latestVersion}, function(r) {
+        $('#cf_installed').text(r.installed);
+        updateMsg(r.success ? 'Installed ' + r.installed : 'Installation failed', !r.success);
+    }, 'json').fail(function(x) {
+        updateMsg((x.responseJSON && x.responseJSON.message) || 'Installation failed', true);
+    }).always(function() { $('#btnCheck').prop('disabled', false); });
+}
+
+function saveUpdateSettings() {
+    $.post(updateUrl, {action: 'save', UPDATE_CHECK: $('#update_check').val(),
+        UPDATE_AUTO: $('#update_auto').is(':checked') ? 'yes' : 'no'}, function() {
+        updateMsg('Settings saved.');
+    }, 'json').fail(function() { updateMsg('Could not save the settings', true); });
+}
+
+$(function() { if ($('#binary_updates').length) { loadUpdateStatus(); } });

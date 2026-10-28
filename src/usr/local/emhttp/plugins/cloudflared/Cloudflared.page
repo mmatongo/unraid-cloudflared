@@ -53,6 +53,40 @@ $token_status = empty($config->get('TUNNEL_TOKEN')) ?
             </div>
         </div>
 
+        <div class="status-section" id="binary_updates">
+            <div class="form-grid">
+                <label>Installed cloudflared:</label>
+                <div><span id="cf_installed">...</span></div>
+
+                <label>Latest release:</label>
+                <div><span id="cf_latest">not checked</span></div>
+
+                <label>Actions:</label>
+                <div>
+                    <button type="button" id="btnCheck" onclick="checkUpdates()">Check for updates</button>
+                    <button type="button" id="btnInstall" onclick="installUpdate()" disabled>Install update</button>
+                    <span id="cf_update_msg"></span>
+                </div>
+
+                <label>Check for updates:</label>
+                <div>
+                    <select id="update_check" class="input-field" onchange="saveUpdateSettings()">
+                        <option value="never">Never</option>
+                        <option value="boot">At startup</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                    </select>
+                </div>
+
+                <label>Install automatically:</label>
+                <div>
+                    <input type="checkbox" id="update_auto" onchange="saveUpdateSettings()">
+                    <span class="help-text" style="margin:0">Otherwise a new release is downloaded, verified and announced by a notification; install it with the button.</span>
+                </div>
+            </div>
+            <div class="help-text" style="margin-left:0">The tunnel restarts for a few seconds when an update is installed. The release checksum is verified against the release notes and the GitHub digest.</div>
+        </div>
+
         <form id="cloudflared_settings" method="POST">
             <div class="settings-section">
                 <div class="form-grid">

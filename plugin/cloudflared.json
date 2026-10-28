@@ -2,11 +2,7 @@
     "name": "cloudflared",
     "author": "Daniel M. Matongo",
     "githubRepository": "mmatongo/unraid-cloudflared",
-    "version": "2026.10.4",
-    "cloudflaredVersion": "2026.10.4",
-    "cloudflaredSHA256": "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42",
-    "packageVersion": "0.5.0",
-    "packageSHA256": "e9c6ebcc543bf7284720de7ef5e0b0a5bdf305b98ec1a75549f6f6e46f7a911f",
+    "version": "2026.10.28",
     "pluginDirectory": "/usr/local/emhttp/plugins/cloudflared",
     "configDirectory": "/boot/config/plugins/cloudflared",
     "minver": "6.11.5"

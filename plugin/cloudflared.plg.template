@@ -16,7 +16,9 @@
 <![CDATA[
 ###{{VERSION}}###
 
-- Updated to version {{VERSION}}
+- Self-contained plugin: the web UI files are embedded in the .plg (no more cloudflared-utils package, so no package checksum to maintain and no build/CI checksum mismatch).
+- The cloudflared binary is no longer pinned in the .plg: scripts/cf-update.sh downloads the release from Cloudflare and checks its SHA256 against both the release notes and the digest computed by GitHub. Update with `cf-update.sh stage` then `cf-update.sh apply <version>`.
+- Versioning change: the plugin version is now the plugin's own (date based), no longer the cloudflared version. Existing installs must be reinstalled once (Plugins > Install Plugin, or `plugin install <url> forced`); settings in /boot/config/plugins/cloudflared/config are kept.
 
 ###2026.7.1###
 
@@ -82,16 +84,6 @@
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-{{CLOUDFLARED_VERSION}}">
-<URL>https://github.com/cloudflare/cloudflared/releases/download/{{CLOUDFLARED_VERSION}}/cloudflared-linux-amd64</URL>
-<SHA256>{{CLOUDFLARED_SHA256}}</SHA256>
-</FILE>
-
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz">
-<URL>https://github.com/{{REPOSITORY}}/releases/download/{{VERSION}}/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz</URL>
-<SHA256>{{PACKAGE_SHA256}}</SHA256>
-</FILE>
-
 <!--
 The 'install' script.
 -->
@@ -123,21 +115,43 @@ if [ -f "/var/run/cloudflared.pid" ]; then
     sleep 2
 fi
 
-# Remove existing plugin directory to ensure clean install
+# Remove the old cloudflared-utils package of previous versions, then the plugin directory (clean install)
+removepkg cloudflared-utils >/dev/null 2>&1 || true
 if [ -d "/usr/local/emhttp/plugins/cloudflared" ]; then
     log "Removing existing plugin installation..."
     rm -rf /usr/local/emhttp/plugins/cloudflared
 fi
 
-# Install cloudflared binary
-log "Installing cloudflared binary..."
-cp /boot/config/plugins/cloudflared/cloudflared-{{CLOUDFLARED_VERSION}} /usr/local/sbin/cloudflared
-if [ $? -ne 0 ]; then
-    log "Failed to copy cloudflared binary"
-    exit 1
+]]>
+</INLINE>
+</FILE>
+
+{{EMBEDDED_FILES}}
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1"
+    logger -t cloudflared-install "$1"
+}
+
+# Install cloudflared binary: newest version already staged in /boot, otherwise download and verify the latest release
+DEST=/boot/config/plugins/cloudflared
+newest() { ls -1 $DEST/cloudflared-[0-9]* 2>/dev/null | sed 's/.*cloudflared-//' | sort -V | tail -1; }
+v=$(newest)
+if [ -z "$v" ]; then
+    log "No staged cloudflared binary, downloading the latest release..."
+    /usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh stage || { log "Failed to stage cloudflared"; exit 1; }
+    v=$(newest)
 fi
-chmod +x /usr/local/sbin/cloudflared
-verify_sha256 "/usr/local/sbin/cloudflared" "{{CLOUDFLARED_SHA256}}" || exit 1
+[ -n "$v" ] || { log "No cloudflared binary available"; exit 1; }
+expected=$(awk -v f="cloudflared-$v" '$2==f {print $1}' $DEST/sha256sums 2>/dev/null)
+actual=$(sha256sum "$DEST/cloudflared-$v" | awk '{print $1}')
+if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
+    log "SHA256 verification failed for cloudflared-$v"; exit 1
+fi
+cp "$DEST/cloudflared-$v" /usr/local/sbin/cloudflared && chmod +x /usr/local/sbin/cloudflared || { log "Failed to install cloudflared"; exit 1; }
+log "cloudflared $v installed"
 
 log "Creating required directories..."
 mkdir -p /boot/config/plugins/cloudflared/config
@@ -172,9 +186,7 @@ EOF
     chmod 600 /boot/config/plugins/cloudflared/config/cloudflared.cfg
 fi
 
-# Install package
-log "Installing package..."
-upgradepkg --install-new --reinstall /boot/config/plugins/cloudflared/cloudflared-utils-{{PACKAGE_VERSION}}-noarch-1.txz
+ln -sfn images/cloudflared.png /usr/local/emhttp/plugins/cloudflared/cloudflared.png
 
 # Set proper permissions
 log "Setting permissions..."
@@ -186,10 +198,8 @@ mkdir -p /var/local/emhttp/plugins/cloudflared
 echo "VERSION={{VERSION}}" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 echo "BRANCH=master" >> /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 
-# Cleanup old versions
-log "Cleaning up old versions..."
-rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-utils-*.txz 2>/dev/null | grep -v '{{PACKAGE_VERSION}}')
-rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-* 2>/dev/null | grep -v '{{CLOUDFLARED_VERSION}}')
+# Keep the two newest binaries (rollback)
+ls -1 $DEST/cloudflared-[0-9]* 2>/dev/null | sed 's/.*cloudflared-//' | sort -V | head -n -2 | while read o; do rm -f "$DEST/cloudflared-$o"; done
 
 cat > "/etc/logrotate.d/cloudflared" << EOF
 /var/log/cloudflared/cloudflared.log {
@@ -211,11 +221,17 @@ if grep -q '^SERVICE="enabled"' "/boot/config/plugins/cloudflared/config/cloudfl
     /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh start
 fi
 
+# Scheduled update check (cron) and check at startup, according to the update settings
+/usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh cron
+if grep -q '^UPDATE_CHECK="boot"' /boot/config/plugins/cloudflared/config/update.cfg 2>/dev/null; then
+    nohup bash -c 'sleep 90; /usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh auto' >/dev/null 2>&1 &
+fi
+
 log "Installation completed successfully"
 echo ""
 echo "----------------------------------------------------"
 echo " Cloudflared has been installed."
-echo " Version: {{VERSION}}"
+echo " Plugin version: {{VERSION}}"
 echo " Access settings under NetworkServices"
 echo "----------------------------------------------------"
 echo ""
@@ -243,9 +259,6 @@ pkill -f cloudflared
 
 log "Removing binary..."
 rm -f /usr/local/sbin/cloudflared
-
-log "Removing package..."
-removepkg cloudflared-utils
 
 log "Cleaning up files..."
 rm -rf /usr/local/emhttp/plugins/cloudflared

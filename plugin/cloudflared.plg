@@ -4,7 +4,7 @@
 <PLUGIN
   name="cloudflared"
   author="Daniel M. Matongo"
-  version="2026.10.4"
+  version="2026.10.28"
   launch="Settings/Cloudflared"
   pluginURL="https://raw.githubusercontent.com/mmatongo/unraid-cloudflared/master/plugin/cloudflared.plg"
   support="https://github.com/mmatongo/unraid-cloudflared/issues"
@@ -14,9 +14,11 @@
 
 <CHANGES>
 <![CDATA[
-###2026.10.4###
+###2026.10.28###
 
-- Updated to version 2026.10.4
+- Self-contained plugin: the web UI files are embedded in the .plg (no more cloudflared-utils package, so no package checksum to maintain and no build/CI checksum mismatch).
+- The cloudflared binary is no longer pinned in the .plg: scripts/cf-update.sh downloads the release from Cloudflare and checks its SHA256 against both the release notes and the digest computed by GitHub. Update with `cf-update.sh stage` then `cf-update.sh apply <version>`.
+- Versioning change: the plugin version is now the plugin's own (date based), no longer the cloudflared version. Existing installs must be reinstalled once (Plugins > Install Plugin, or `plugin install <url> forced`); settings in /boot/config/plugins/cloudflared/config are kept.
 
 ###2026.7.1###
 
@@ -82,16 +84,6 @@
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-2026.10.4">
-<URL>https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64</URL>
-<SHA256>ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42</SHA256>
-</FILE>
-
-<FILE Name="/boot/config/plugins/cloudflared/cloudflared-utils-0.5.0-noarch-1.txz">
-<URL>https://github.com/mmatongo/unraid-cloudflared/releases/download/2026.10.4/cloudflared-utils-0.5.0-noarch-1.txz</URL>
-<SHA256>e9c6ebcc543bf7284720de7ef5e0b0a5bdf305b98ec1a75549f6f6e46f7a911f</SHA256>
-</FILE>
-
 <!--
 The 'install' script.
 -->
@@ -123,21 +115,1392 @@ if [ -f "/var/run/cloudflared.pid" ]; then
     sleep 2
 fi
 
-# Remove existing plugin directory to ensure clean install
+# Remove the old cloudflared-utils package of previous versions, then the plugin directory (clean install)
+removepkg cloudflared-utils >/dev/null 2>&1 || true
 if [ -d "/usr/local/emhttp/plugins/cloudflared" ]; then
     log "Removing existing plugin installation..."
     rm -rf /usr/local/emhttp/plugins/cloudflared
 fi
 
-# Install cloudflared binary
-log "Installing cloudflared binary..."
-cp /boot/config/plugins/cloudflared/cloudflared-2026.10.4 /usr/local/sbin/cloudflared
-if [ $? -ne 0 ]; then
-    log "Failed to copy cloudflared binary"
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/Cloudflared.page" Mode="0644">
+<INLINE>
+<![CDATA[Menu="NetworkServices"
+Type="xmenu"
+Title="Cloudflared"
+Icon="cloudflared.png"
+Tag="cloud"
+Tabs="true"
+---
+<?php
+/* Copyright 2025, Daniel M. Matongo
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version 2,
+ * as published by the Free Software Foundation.
+ */
+
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "$docroot/webGui/include/Helpers.php";
+require_once "$docroot/plugins/cloudflared/include/Config.php";
+require_once "$docroot/plugins/cloudflared/include/ServiceManager.php";
+require_once "$docroot/plugins/cloudflared/include/Logger.php";
+
+$config = Cloudflared\Config::getInstance();
+$service = new Cloudflared\ServiceManager();
+$logger = Cloudflared\Logger::getInstance();
+
+$tab = $_GET['tab'] ?? 'settings';
+$cloudflared_running = $service->isRunning();
+
+$status = $cloudflared_running ? "Running" : "Stopped";
+$status_color = $cloudflared_running ? "green-text" : "red-text";
+$token_status = empty($config->get('TUNNEL_TOKEN')) ?
+    "<span class='red-text'>Not Configured</span>" :
+    "<span class='green-text'>Configured</span>";
+?>
+
+<link type="text/css" rel="stylesheet" href="/plugins/cloudflared/assets/css/styles.php">
+
+<div class="cloudflared-container">
+    <div class="tab-nav">
+        <a href="/Settings/Cloudflared?tab=settings" class="<?=$tab=='settings'?'active':''?>">Settings</a>
+        <a href="/Settings/Cloudflared?tab=logs" class="<?=$tab=='logs'?'active':''?>">Logs</a>
+    </div>
+
+    <?php if ($tab == 'settings'): ?>
+    <div id="settings">
+        <div class="status-section">
+            <div class="form-grid">
+                <label>Service Status:</label>
+                <div><span class="<?=$status_color?>"><?=$status?></span></div>
+
+                <label>Tunnel Token:</label>
+                <div><?=$token_status?></div>
+            </div>
+        </div>
+
+        <div class="status-section" id="binary_updates">
+            <div class="form-grid">
+                <label>Installed cloudflared:</label>
+                <div><span id="cf_installed">...</span></div>
+
+                <label>Latest release:</label>
+                <div><span id="cf_latest">not checked</span></div>
+
+                <label>Actions:</label>
+                <div>
+                    <button type="button" id="btnCheck" onclick="checkUpdates()">Check for updates</button>
+                    <button type="button" id="btnInstall" onclick="installUpdate()" disabled>Install update</button>
+                    <span id="cf_update_msg"></span>
+                </div>
+
+                <label>Check for updates:</label>
+                <div>
+                    <select id="update_check" class="input-field" onchange="saveUpdateSettings()">
+                        <option value="never">Never</option>
+                        <option value="boot">At startup</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                    </select>
+                </div>
+
+                <label>Install automatically:</label>
+                <div>
+                    <input type="checkbox" id="update_auto" onchange="saveUpdateSettings()">
+                    <span class="help-text" style="margin:0">Otherwise a new release is downloaded, verified and announced by a notification; install it with the button.</span>
+                </div>
+            </div>
+            <div class="help-text" style="margin-left:0">The tunnel restarts for a few seconds when an update is installed. The release checksum is verified against the release notes and the GitHub digest.</div>
+        </div>
+
+        <form id="cloudflared_settings" method="POST">
+            <div class="settings-section">
+                <div class="form-grid">
+                    <label>Enable Service:</label>
+                    <select name="SERVICE" id="service_toggle" class="input-field">
+                        <?=mk_option($config->get('SERVICE'), "disabled", _("No"))?>
+                        <?=mk_option($config->get('SERVICE'), "enabled", _("Yes"))?>
+                    </select>
+                </div>
+
+                <div id="tunnel_settings" style="display:<?=$config->get('SERVICE')==='enabled'?'block':'none'?>">
+                    <div class="form-grid" style="margin-top:20px">
+                        <!-- Tunnel settings fields -->
+                        <?php foreach ($config->getSettingsFields() as $field): ?>
+                        <label><?=$field['label']?>:</label>
+                        <div class="setting-group">
+                            <?php if ($field['type'] === 'select'): ?>
+                                <select name="<?=$field['name']?>" class="input-field">
+                                    <?php foreach ($field['options'] as $value => $label): ?>
+                                        <?=mk_option($config->get($field['name']), $value, _($label))?>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <input type="<?=$field['type']?>"
+                                       name="<?=$field['name']?>"
+                                       value="<?=htmlspecialchars($config->get($field['name']))?>"
+                                       class="input-field"
+                                       <?=isset($field['placeholder']) ? "placeholder=\"{$field['placeholder']}\"" : ""?>
+                                       <?=isset($field['min']) ? "min=\"{$field['min']}\"" : ""?>
+                                       <?=isset($field['max']) ? "max=\"{$field['max']}\"" : ""?>>
+                            <?php endif; ?>
+                            <div class="help-text"><?=$field['help']?></div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" id="btnApply" disabled>Apply</button>
+                <button type="button" onclick="done()">Done</button>
+            </div>
+        </form>
+    </div>
+
+    <?php else: ?>
+    <div id="logs">
+        <div class="log-toolbar">
+            <button type="button" onclick="refreshLogs()">Refresh</button>
+            <button type="button" onclick="clearLogs()">Clear</button>
+            <label>
+                <input type="checkbox" id="autoRefresh" onclick="toggleAutoRefresh()"> Auto-refresh
+            </label>
+        </div>
+
+        <div class="log-container" id="logContent">
+            <?php echo $logger->getFormattedLogs(); ?>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<script src="/plugins/cloudflared/assets/js/app.php"></script>
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/README.md" Mode="0644">
+<INLINE>
+<![CDATA[**Cloudflared**
+
+Cloudflared is a tunneling daemon that proxies traffic from the Cloudflare network to your origins without exposing your origin server's IP address.
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/assets/css/styles.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php header('Content-Type: text/css'); ?>
+/* base styles */
+.cloudflared-container {
+    margin: 20px auto;
+    max-width: 1200px;
+}
+
+.status-section {
+    background-color: #f8f8f8;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+/* form styling */
+.form-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 15px;
+    align-items: center;
+}
+
+.form-grid label {
+    font-weight: bold;
+    color: #666;
+}
+
+.form-grid > div {
+    line-height: 1.5;
+    padding: 4px 0;
+}
+
+.help-text {
+    grid-column: 2;
+    color: #666;
+    font-size: 0.9em;
+    margin-top: 4px;
+    margin-bottom: 12px;
+}
+
+/* log section styling */
+.log-container {
+    background-color: #1a1a1a;
+    color: #f0f0f0;
+    font-family: monospace;
+    border-radius: 4px;
+    padding: 15px;
+    height: 500px;
+    overflow-y: auto;
+}
+
+.log-toolbar {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #f8f8f8;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #000;
+}
+
+.log-line {
+    padding: 3px 5px;
+    border-bottom: 1px solid #333;
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+#cloudflared_settings {
+    padding: 15px;
+}
+
+.tab-nav {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ddd;
+}
+
+.tab-nav a {
+    display: inline-block;
+    padding: 10px 20px;
+    text-decoration: none;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.tab-nav a:hover {
+    color: #333;
+}
+
+.tab-nav a.active {
+    color: #fff;
+    border-bottom-color: #fff;
+}
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/assets/js/app.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php header('Content-Type: application/javascript'); ?>
+$(function() {
+    $('#cloudflared_settings').submit(function(event) {
+        event.preventDefault();
+        $('#btnApply').prop('disabled', true);
+
+        let formData = $(this).serializeArray();
+        let config = {};
+        formData.forEach(function(item) {
+            config[item.name] = item.value;
+        });
+
+        $.post('/plugins/cloudflared/include/ajax/service_handler.php', {
+            action: 'apply',
+            config: config
+        }, function(response) {
+            if (response.success) {
+                window.location.reload();
+            } else {
+                $('#btnApply').prop('disabled', false);
+            }
+        }, 'json')
+        .fail(function(jqXHR, textStatus, errorThrown) {
+            $('#btnApply').prop('disabled', false);
+        });
+    });
+    $('#cloudflared_settings input, #cloudflared_settings select').on('input change', function() {
+        $('#btnApply').prop('disabled', false);
+    });
+
+    const initialState = $('#service_toggle').val() === 'enabled';
+    $('#tunnel_settings').toggle(initialState);
+});
+
+$('#service_toggle').change(function() {
+    $('#tunnel_settings').slideToggle(400);
+    $('#btnApply').prop('disabled', false);
+});
+
+let autoRefreshInterval;
+
+function refreshLogs() {
+    $.get('/plugins/cloudflared/include/ajax/fetch_logs.php')
+        .done(function(data) {
+            if (data) {
+                $('#logContent').html(data);
+            } else {
+                $('#logContent').html('<div class="log-line">No logs available</div>');
+            }
+        })
+        .fail(function(jqXHR, textStatus, errorThrown) {
+            $('#logContent').html('<div class="log-line error">Failed to fetch logs: ' + errorThrown + '</div>');
+        });
+}
+
+function clearLogs() {
+    $.post('/plugins/cloudflared/include/ajax/log_clear.php')
+        .done(function(response) {
+            $('#logContent').empty();
+            $('#logContent').append('<div class="log-line">' + response + '</div>');
+        })
+        .fail(function(jqXHR, textStatus, errorThrown) {
+            $('#logContent').html('<div class="log-line error">Failed to clear logs: ' + errorThrown + '</div>');
+        });
+}
+
+function toggleAutoRefresh() {
+    if ($('#autoRefresh').is(':checked')) {
+        localStorage.setItem('cloudflared_autorefresh', 'true');
+        refreshLogs();
+        autoRefreshInterval = setInterval(function() {
+            try {
+                refreshLogs();
+            } catch (error) {
+                console.error('Auto-refresh error:', error);
+                clearInterval(autoRefreshInterval);
+                $('#autoRefresh').prop('checked', false);
+            }
+        }, 5000);
+    } else {
+        localStorage.setItem('cloudflared_autorefresh', 'false');
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+    }
+}
+
+$(window).on('unload', function() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+});
+
+$(document).ready(function() {
+    const autoRefreshEnabled = localStorage.getItem('cloudflared_autorefresh') === 'true';
+    $('#autoRefresh').prop('checked', autoRefreshEnabled);
+    if (autoRefreshEnabled) {
+        toggleAutoRefresh();
+    }
+});
+
+const updateUrl = '/plugins/cloudflared/include/ajax/update_handler.php';
+let latestVersion = '';
+
+function updateMsg(text, isError) {
+    $('#cf_update_msg').text(text).css('color', isError ? '#c00' : '');
+}
+
+function loadUpdateStatus() {
+    $.post(updateUrl, {action: 'status'}, function(r) {
+        $('#cf_installed').text(r.installed || 'unknown');
+        $('#update_check').val(r.UPDATE_CHECK);
+        $('#update_auto').prop('checked', r.UPDATE_AUTO === 'yes');
+    }, 'json');
+}
+
+function checkUpdates() {
+    $('#btnCheck').prop('disabled', true);
+    updateMsg('Checking...');
+    $.post(updateUrl, {action: 'check'}, function(r) {
+        latestVersion = r.latest;
+        $('#cf_latest').text(r.latest);
+        $('#btnInstall').prop('disabled', !r.newer);
+        updateMsg(r.newer ? 'A newer version is available.' : 'Up to date.');
+    }, 'json').fail(function(x) {
+        updateMsg((x.responseJSON && x.responseJSON.message) || 'Check failed', true);
+    }).always(function() { $('#btnCheck').prop('disabled', false); });
+}
+
+function installUpdate() {
+    if (!latestVersion || !confirm('Install cloudflared ' + latestVersion + '? The tunnel will restart for a few seconds.')) {
+        return;
+    }
+    $('#btnInstall, #btnCheck').prop('disabled', true);
+    updateMsg('Downloading, verifying and restarting...');
+    $.post(updateUrl, {action: 'install', version: latestVersion}, function(r) {
+        $('#cf_installed').text(r.installed);
+        updateMsg(r.success ? 'Installed ' + r.installed : 'Installation failed', !r.success);
+    }, 'json').fail(function(x) {
+        updateMsg((x.responseJSON && x.responseJSON.message) || 'Installation failed', true);
+    }).always(function() { $('#btnCheck').prop('disabled', false); });
+}
+
+function saveUpdateSettings() {
+    $.post(updateUrl, {action: 'save', UPDATE_CHECK: $('#update_check').val(),
+        UPDATE_AUTO: $('#update_auto').is(':checked') ? 'yes' : 'no'}, function() {
+        updateMsg('Settings saved.');
+    }, 'json').fail(function() { updateMsg('Could not save the settings', true); });
+}
+
+$(function() { if ($('#binary_updates').length) { loadUpdateStatus(); } });
+]]>
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+mkdir -p "$(dirname /usr/local/emhttp/plugins/cloudflared/images/cloudflared.png)"
+base64 -d > /usr/local/emhttp/plugins/cloudflared/images/cloudflared.png <<'B64'
+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
+B64
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/Config.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+class Config {
+    private static $instance = null;
+    private $config = [];
+    private $configFile;
+
+    private function __construct() {
+        $this->configFile = "/boot/config/plugins/cloudflared/config/cloudflared.cfg";
+        $this->loadDefaults();
+        $this->loadConfig();
+    }
+
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    private function loadDefaults() {
+        $this->config = [
+            'SERVICE' => 'disabled',
+            'TUNNEL_TOKEN' => '',
+            'TUNNEL_RETRIES' => '5',
+            'TUNNEL_REGION' => '',
+            'TUNNEL_TRANSPORT_PROTOCOL' => 'auto',
+            'TUNNEL_EDGE_IP_VERSION' => 'auto',
+            'TUNNEL_GRACE_PERIOD' => '30s',
+            'TUNNEL_METRICS' => '0.0.0.0:46495',
+            'TUNNEL_LOGLEVEL' => 'info',
+            'TUNNEL_ORIGIN_CERT' => ''
+        ];
+    }
+
+    private function loadConfig() {
+        if (file_exists($this->configFile)) {
+            $loadedConfig = parse_ini_file($this->configFile);
+            if ($loadedConfig) {
+                $this->config = array_merge($this->config, $loadedConfig);
+            }
+        }
+    }
+
+    public function get($key, $default = null) {
+        return $this->config[$key] ?? $default;
+    }
+
+    public function set($key, $value) {
+        $this->config[$key] = $value;
+    }
+
+    public function save() {
+        $content = '';
+        foreach ($this->config as $key => $value) {
+            $content .= "{$key}=\"{$value}\"\n";
+        }
+        return file_put_contents($this->configFile, $content);
+    }
+
+    public function getAll() {
+        return $this->config;
+    }
+
+    public function getSettingsFields() {
+        return [
+            [
+                'name' => 'TUNNEL_TOKEN',
+                'label' => 'Tunnel Token',
+                'type' => 'password',
+                'help' => 'Required for tunnel authentication. Get this from your Cloudflare Zero Trust dashboard.',
+                'placeholder' => 'Your Cloudflare tunnel token'
+            ],
+            [
+                'name' => 'TUNNEL_RETRIES',
+                'label' => 'Retry Count',
+                'type' => 'number',
+                'help' => 'Number of connection retry attempts.',
+                'min' => '1',
+                'max' => '10'
+            ],
+            [
+                'name' => 'TUNNEL_REGION',
+                'label' => 'Region',
+                'type' => 'select',
+                'options' => ['us' => 'United States', '' => 'Global'],
+                'help' => 'Region to connect to. Only US is supported at this time. Omit to use the global network.',
+                'default' => 'us'
+            ],
+            [
+                'name' => 'TUNNEL_TRANSPORT_PROTOCOL',
+                'label' => 'Transport Protocol',
+                'type' => 'select',
+                'options' => ['auto' => 'Auto', 'http2' => 'HTTP/2', 'quic' => 'QUIC']
+            ],
+            [
+                'name' => 'TUNNEL_EDGE_IP_VERSION',
+                'label' => 'Edge IP Version',
+                'type' => 'select',
+                'options' => ['auto' => 'Auto', '4' => 'IPv4', '6' => 'IPv6']
+            ],
+            [
+                'name' => 'TUNNEL_GRACE_PERIOD',
+                'label' => 'Grace Period',
+                'type' => 'text',
+                'help' => 'Time to wait before retrying a connection.'
+            ],
+            [
+                'name' => 'TUNNEL_METRICS',
+                'label' => 'Metrics',
+                'type' => 'text',
+                'help' => 'Metrics endpoint for the tunnel.',
+                'placeholder' => '0.0.0.0:46495'
+            ],
+            [
+                'name' => 'TUNNEL_LOGLEVEL',
+                'label' => 'Log Level',
+                'type' => 'select',
+                'options' => ['info' => 'Info', 'warn' => 'Warn', 'error' => 'Error', 'debug' => 'Debug', 'fatal' => 'Fatal']
+            ],
+            [
+                'name' => 'TUNNEL_ORIGIN_CERT',
+                'label' => 'Origin Certificate',
+                'type' => 'text',
+                'help' => 'Optional. Paste your Cloudflare origin certificate here if you want to use a custom one.'
+            ]
+        ];
+    }
+}
+?>
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/Logger.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+class Logger {
+    private static $instance = null;
+    private $logFile;
+    private $maxLogSize = 5242880;
+
+    private function __construct() {
+        $this->logFile = '/var/log/cloudflared/cloudflared.log';
+        $this->ensureLogDirectory();
+    }
+
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    private function ensureLogDirectory() {
+        $logDir = dirname($this->logFile);
+        if (!file_exists($logDir)) {
+            mkdir($logDir, 0755, true);
+            chown($logDir, 'nobody');
+            chgrp($logDir, 'users');
+        }
+
+        if (!file_exists($this->logFile)) {
+            touch($this->logFile);
+            chmod($this->logFile, 0644);
+            chown($this->logFile, 'nobody');
+            chgrp($this->logFile, 'users');
+        }
+    }
+
+    private function rotate() {
+        if (file_exists($this->logFile) && filesize($this->logFile) > $this->maxLogSize) {
+            $backupFile = $this->logFile . '.' . date('Y-m-d-H-i-s');
+            rename($this->logFile, $backupFile);
+            chmod($backupFile, 0644);
+            chown($backupFile, 'nobody');
+            chgrp($backupFile, 'users');
+            $this->ensureLogDirectory();
+
+            // Keep only last 5 backup files
+            $backups = glob($this->logFile . '.*');
+            rsort($backups);
+            foreach (array_slice($backups, 5) as $oldBackup) {
+                unlink($oldBackup);
+            }
+        }
+    }
+
+    public function log($message, $level = 'INFO') {
+        $this->rotate();
+
+        $timestamp = date('Y-m-d H:i:s');
+        $logMessage = "[$timestamp] [$level] $message\n";
+        file_put_contents($this->logFile, $logMessage, FILE_APPEND);
+    }
+
+    public function getLines($count = 100) {
+        if (!file_exists($this->logFile)) {
+            return [];
+        }
+
+        $lines = array_reverse(file($this->logFile));
+        return array_slice($lines, 0, $count);
+    }
+
+    public function clear() {
+        file_put_contents($this->logFile, '');
+        $this->log('Log cleared', 'INFO');
+    }
+
+    public function getLogPath() {
+        return $this->logFile;
+    }
+
+    public function getFormattedLogs() {
+        $output = '';
+        $logs = $this->getLines();
+        foreach ($logs as $line) {
+            $output .= "<div class='log-line'>" . htmlspecialchars($line) . "</div>";
+        }
+        return $output;
+    }
+}
+?>
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/ServiceManager.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+class ServiceManager {
+    private $config;
+    private $serviceScript;
+    private $logger;
+
+    public function __construct() {
+        $this->config = Config::getInstance();
+        $this->logger = Logger::getInstance();
+        $this->serviceScript = '/usr/local/emhttp/plugins/cloudflared/scripts/restart.sh';
+
+        $logDir = dirname($this->logger->getLogPath());
+        if (!file_exists($logDir)) {
+            mkdir($logDir, 0755, true);
+            chown($logDir, 'nobody');
+            chgrp($logDir, 'users');
+        }
+    }
+
+    public function isRunning() {
+        $result = $this->execute($this->serviceScript . ' status');
+        return trim($result['output']) === 'running';
+    }
+
+    public function start() {
+        if ($this->isRunning()) {
+            $this->logger->log('Attempted to start already running service', 'WARN');
+            return ['success' => false, 'message' => 'Service is already running'];
+        }
+
+        $this->logger->log('Starting service...', 'INFO');
+        $result = $this->execute($this->serviceScript . ' start');
+
+        if ($result['success']) {
+            $this->logger->log('Service started successfully', 'INFO');
+        } else {
+            $this->logger->log('Failed to start service: ' . $result['output'], 'ERROR');
+        }
+
+        return $result;
+    }
+
+    public function stop() {
+        if (!$this->isRunning()) {
+            $this->logger->log('Attempted to stop already stopped service', 'WARN');
+            return ['success' => false, 'message' => 'Service is not running'];
+        }
+
+        $this->logger->log('Stopping service...', 'INFO');
+        $result = $this->execute($this->serviceScript . ' stop');
+
+        if ($result['success']) {
+            $this->logger->log('Service stopped successfully', 'INFO');
+        } else {
+            $this->logger->log('Failed to stop service: ' . $result['output'], 'ERROR');
+        }
+
+        return $result;
+    }
+
+    public function restart() {
+        $this->logger->log('Restarting service...', 'INFO');
+        $result = $this->execute($this->serviceScript . ' restart');
+
+        if ($result['success']) {
+            $this->logger->log('Service restarted successfully', 'INFO');
+        } else {
+            $this->logger->log('Failed to restart service: ' . $result['output'], 'ERROR');
+        }
+
+        return $result;
+    }
+
+    public function applyConfig($newConfig) {
+        $this->logger->log('Applying new configuration...', 'INFO');
+
+        $wasRunning = $this->isRunning();
+        $wasEnabled = $this->config->get('SERVICE') === 'enabled';
+        $willBeEnabled = $newConfig['SERVICE'] === 'enabled';
+
+        // Save new configuration
+        foreach ($newConfig as $key => $value) {
+            $this->config->set($key, $value);
+        }
+
+        if (!$this->config->save()) {
+            $this->logger->log('Failed to save configuration', 'ERROR');
+            return ['success' => false, 'message' => 'Failed to save configuration'];
+        }
+
+        if (isset($newConfig['SERVICE'])) {
+            if (!$wasEnabled && $willBeEnabled) {
+                $this->logger->log('Service newly enabled, starting...', 'INFO');
+                return $this->start();
+            } elseif ($wasEnabled && !$willBeEnabled) {
+                $this->logger->log('Service disabled, stopping...', 'INFO');
+                return $this->stop();
+            } elseif ($willBeEnabled && $wasEnabled) {
+                $this->logger->log('Restarting service to apply changes...', 'INFO');
+                return $this->restart();
+            }
+        }
+
+        return ['success' => true, 'message' => 'Configuration updated'];
+    }
+
+    private function execute($command) {
+        exec($command . ' 2>&1', $output, $returnCode);
+        $output = implode("\n", $output);
+
+        return [
+            'success' => $returnCode === 0,
+            'output' => $output,
+            'code' => $returnCode
+        ];
+    }
+}
+?>
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/ajax/fetch_logs.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "$docroot/plugins/cloudflared/include/Logger.php";
+
+try {
+    $logger = Logger::getInstance();
+    echo $logger->getFormattedLogs();
+} catch (\Exception $e) {
+    http_response_code(500);
+    echo "<div class='log-line error'>Error fetching logs: " . htmlspecialchars($e->getMessage()) . "</div>";
+}
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/ajax/log_clear.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "$docroot/plugins/cloudflared/include/Logger.php";
+
+try {
+    $logger = Logger::getInstance();
+    $logger->clear();
+    echo "Logs cleared successfully";
+} catch (\Exception $e) {
+    http_response_code(500);
+    echo "Error clearing logs: " . htmlspecialchars($e->getMessage());
+} ]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/ajax/service_handler.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+header('Content-Type: application/json');
+
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "$docroot/plugins/cloudflared/include/ServiceManager.php";
+require_once "$docroot/plugins/cloudflared/include/Config.php";
+require_once "$docroot/plugins/cloudflared/include/Logger.php";
+
+try {
+    $action = $_POST['action'] ?? '';
+
+    $serviceManager = new ServiceManager();
+
+    switch ($action) {
+        case 'apply':
+            if (!isset($_POST['config']) || !is_array($_POST['config'])) {
+                throw new \Exception('Invalid configuration data');
+            }
+
+            $result = $serviceManager->applyConfig($_POST['config']);
+            echo json_encode($result);
+            break;
+
+        case 'start':
+            $result = $serviceManager->start();
+            echo json_encode($result);
+            break;
+
+        case 'stop':
+            $result = $serviceManager->stop();
+            echo json_encode($result);
+            break;
+
+        case 'restart':
+            $result = $serviceManager->restart();
+            echo json_encode($result);
+            break;
+
+        case 'status':
+            $result = [
+                'success' => true,
+                'running' => $serviceManager->isRunning(),
+            ];
+            echo json_encode($result);
+            break;
+
+        default:
+            throw new \Exception('Invalid action specified');
+    }
+
+} catch (\Exception $e) {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'message' => $e->getMessage()
+    ]);
+}
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/ajax/update_handler.php" Mode="0644">
+<INLINE>
+<![CDATA[<?php
+namespace Cloudflared;
+
+header('Content-Type: application/json');
+
+$script = '/usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh';
+$settingsFile = '/boot/config/plugins/cloudflared/config/update.cfg';
+$dest = '/boot/config/plugins/cloudflared';
+
+function installedVersion() {
+    $out = trim((string)shell_exec('/usr/local/sbin/cloudflared --version 2>/dev/null'));
+    return preg_match('/version\s+(\S+)/', $out, $m) ? $m[1] : '';
+}
+
+function settings($file) {
+    $s = ['UPDATE_CHECK' => 'never', 'UPDATE_AUTO' => 'no'];
+    if (file_exists($file)) {
+        $s = array_merge($s, parse_ini_file($file));
+    }
+    return $s;
+}
+
+function staged($dest) {
+    $versions = [];
+    foreach (glob("$dest/cloudflared-[0-9]*") as $f) {
+        $versions[] = substr(basename($f), strlen('cloudflared-'));
+    }
+    usort($versions, 'version_compare');
+    return $versions;
+}
+
+function runScript($script, $args) {
+    $cmd = escapeshellarg($script) . ' ' . $args . ' 2>&1';
+    exec($cmd, $lines, $rc);
+    return [$rc, implode("\n", $lines)];
+}
+
+try {
+    $action = $_POST['action'] ?? '';
+    switch ($action) {
+        case 'status':
+            echo json_encode(['success' => true, 'installed' => installedVersion(), 'staged' => staged($dest)] + settings($settingsFile));
+            break;
+
+        case 'check':
+            list($rc, $out) = runScript($script, 'check');
+            if ($rc !== 0 || !preg_match('/latest:\s*(\S+)/', $out, $m)) {
+                throw new \Exception('Could not reach the release server');
+            }
+            $latest = $m[1];
+            $installed = installedVersion();
+            echo json_encode(['success' => true, 'installed' => $installed, 'latest' => $latest,
+                'newer' => version_compare($latest, $installed, '>')]);
+            break;
+
+        case 'install':
+            $version = $_POST['version'] ?? '';
+            if (!preg_match('/^[0-9]+(\.[0-9]+)*$/', $version)) {
+                throw new \Exception('Invalid version');
+            }
+            list($rc, $out) = runScript($script, 'stage ' . escapeshellarg($version));
+            if ($rc !== 0) {
+                throw new \Exception("Download or verification failed:\n$out");
+            }
+            list($rc, $out2) = runScript($script, 'apply ' . escapeshellarg($version));
+            echo json_encode(['success' => $rc === 0, 'message' => $out . "\n" . $out2, 'installed' => installedVersion()]);
+            break;
+
+        case 'save':
+            $check = $_POST['UPDATE_CHECK'] ?? 'never';
+            $auto = $_POST['UPDATE_AUTO'] ?? 'no';
+            if (!in_array($check, ['never', 'boot', 'daily', 'weekly'], true) || !in_array($auto, ['no', 'yes'], true)) {
+                throw new \Exception('Invalid settings');
+            }
+            file_put_contents($settingsFile, "UPDATE_CHECK=\"$check\"\nUPDATE_AUTO=\"$auto\"\n");
+            runScript($script, 'cron');
+            echo json_encode(['success' => true]);
+            break;
+
+        default:
+            throw new \Exception('Invalid action specified');
+    }
+} catch (\Exception $e) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+}
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/include/install_functions.sh" Mode="0755">
+<INLINE>
+<![CDATA[#!/bin/bash
+
+cloudflared_log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    logger -t cloudflared-install "$1"
+}
+
+cloudflared_create_default_config() {
+    local config_file="/boot/config/plugins/cloudflared/config/cloudflared.cfg"
+
+    if [ ! -f "$config_file" ]; then
+        cloudflared_log "Creating default configuration..."
+        mkdir -p "$(dirname "$config_file")"
+        cat > "$config_file" <<EOL
+# Cloudflared configuration
+SERVICE="disabled"
+TUNNEL_TOKEN=""
+TUNNEL_RETRIES="5"
+TUNNEL_REGION=""
+TUNNEL_TRANSPORT_PROTOCOL="auto"
+TUNNEL_EDGE_BIND_ADDRESS=""
+TUNNEL_EDGE_IP_VERSION="auto"
+TUNNEL_GRACE_PERIOD="30s"
+TUNNEL_ORIGIN_CERT=""
+TUNNEL_METRICS="0.0.0.0:46495"
+TUNNEL_LOGLEVEL="info"
+TUNNEL_ORIGIN_CERT=""
+EOL
+    fi
+}
+
+cloudflared_setup_logging() {
+    local log_dir="/var/log/cloudflared"
+    mkdir -p "$log_dir"
+    chmod 755 "$log_dir"
+
+    cat > "/etc/logrotate.d/cloudflared" <<EOL
+/var/log/cloudflared/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    postrotate
+        /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh restart >/dev/null 2>&1 || true
+    create 644 nobody users
+}
+EOL
+}
+
+cloudflared_install_completion() {
+    if command -v cloudflared >/dev/null 2>&1; then
+        cloudflared_log "Installing shell completion..."
+        cloudflared completion bash > /etc/bash_completion.d/cloudflared
+        chmod 644 /etc/bash_completion.d/cloudflared
+    fi
+}
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh" Mode="0755">
+<INLINE>
+<![CDATA[#!/bin/bash
+# Local update of the cloudflared binary (no package to rebuild).
+#   cf-update.sh check             show installed / latest release (nothing is changed)
+#   cf-update.sh stage [version]   download, verify and store as $DEST/cloudflared-<version> (not activated)
+#   cf-update.sh apply <version>   activate a staged version (copy to /usr/local/sbin, restart the service)
+#   cf-update.sh auto              what the scheduled / boot check runs: stage a newer release, notify, apply it if UPDATE_AUTO=yes
+#   cf-update.sh cron              (re)write the cron entry from the update settings
+# Settings (UPDATE_CHECK=never|boot|daily|weekly, UPDATE_AUTO=no|yes): $DEST/config/update.cfg
+# Verification: the SHA256 of the binary must match both the one in the release notes
+# and the digest computed by GitHub, and the binary must run (--version).
+DEST=${CF_DEST:-/boot/config/plugins/cloudflared}
+REPO=cloudflare/cloudflared
+ASSET=cloudflared-linux-amd64
+API=https://api.github.com/repos/$REPO/releases
+BIN=${CF_BIN:-/usr/local/sbin/cloudflared}
+SETTINGS=$DEST/config/update.cfg
+CRONFILE=$DEST/cloudflared-update.cron
+SELF=$(readlink -f "$0")
+UPDATE_CHECK=never; UPDATE_AUTO=no
+[ -f "$SETTINGS" ] && . "$SETTINGS"
+notify() { /usr/local/emhttp/webGui/scripts/notify -e "Cloudflared" -s "$1" -d "$2" -i "${3:-normal}" 2>/dev/null; }
+log() { echo "$(date '+%F %T') $*"; logger -t cloudflared-update "$*" 2>/dev/null; }
+
+release_json() { if [ -n "$1" ]; then curl -fsS -m 30 "$API/tags/$1"; else curl -fsS -m 30 "$API/latest"; fi; }
+
+case "$1" in
+check)
+  cur=$("$BIN" --version 2>/dev/null | awk '{print $3}')
+  last=$(release_json | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])')
+  echo "installed: ${cur:-unknown}  latest: $last"
+  ;;
+stage)
+  json=$(release_json "$2") || { log "ERROR: release not found"; exit 1; }
+  read -r tag digest notes < <(printf '%s' "$json" | python3 -c '
+import sys,json,re
+r=json.load(sys.stdin); a=[x for x in r["assets"] if x["name"]=="'$ASSET'"][0]
+m=re.search(r"'$ASSET':\s*([0-9a-f]{64})", r.get("body") or "")
+print(r["tag_name"], (a.get("digest") or "").replace("sha256:",""), m.group(1) if m else "")')
+  [ -n "$tag" ] && [ -n "$digest" ] && [ "$digest" = "$notes" ] || { log "ERROR: checksums missing or different (GitHub digest=$digest, release notes=$notes)"; exit 1; }
+  mkdir -p "$DEST"; tmp=$(mktemp)
+  curl -fsSL -m 300 -o "$tmp" "https://github.com/$REPO/releases/download/$tag/$ASSET" || { rm -f "$tmp"; log "ERROR: download failed"; exit 1; }
+  got=$(sha256sum "$tmp" | awk '{print $1}')
+  [ "$got" = "$digest" ] || { rm -f "$tmp"; log "ERROR: file checksum ($got) differs from $digest"; exit 1; }
+  chmod +x "$tmp"; "$tmp" --version >/dev/null 2>&1 || { rm -f "$tmp"; log "ERROR: the binary does not run"; exit 1; }
+  mv "$tmp" "$DEST/cloudflared-$tag"
+  grep -v " cloudflared-$tag\$" "$DEST/sha256sums" 2>/dev/null > "$DEST/sha256sums.tmp"; echo "$got  cloudflared-$tag" >> "$DEST/sha256sums.tmp"; mv "$DEST/sha256sums.tmp" "$DEST/sha256sums"
+  log "OK: $tag staged ($got)"
+  ;;
+apply)
+  f="$DEST/cloudflared-$2"; [ -x "$f" ] || { log "ERROR: $f not found (run stage first)"; exit 1; }
+  exp=$(awk -v f="cloudflared-$2" '$2==f {print $1}' "$DEST/sha256sums" 2>/dev/null)
+  [ -z "$exp" ] || [ "$exp" = "$(sha256sum "$f" | awk '{print $1}')" ] || { log "ERROR: staged file checksum mismatch"; exit 1; }
+  cp "$f" "$BIN.new" && mv "$BIN.new" "$BIN" && log "binary $2 activated"
+  [ "${CF_NORESTART:-0}" = 1 ] || /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh restart
+  ;;
+auto)
+  [ "$UPDATE_CHECK" = never ] && exit 0
+  cur=$("$BIN" --version 2>/dev/null | awk '{print $3}')
+  last=$(release_json | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])') || { log "auto: release check failed"; exit 1; }
+  [ -n "$last" ] && [ "$last" != "$cur" ] && [ "$(printf '%s\n%s\n' "$cur" "$last" | sort -V | tail -1)" = "$last" ] || { log "auto: up to date ($cur)"; exit 0; }
+  "$SELF" stage "$last" || { notify "Cloudflared: update $last failed" "The checksum verification or the download failed, see the plugin log." alert; exit 1; }
+  if [ "$UPDATE_AUTO" = yes ]; then
+    "$SELF" apply "$last" && notify "Cloudflared updated to $last" "Previous version: $cur" || notify "Cloudflared: applying $last failed" "Still on $cur" alert
+  else
+    notify "Cloudflared $last available" "Downloaded and verified. Install it from Settings > Cloudflared."
+  fi
+  ;;
+cron)
+  case "$UPDATE_CHECK" in
+    daily)  echo "17 4 * * * $SELF auto >/dev/null 2>&1" > "$CRONFILE" ;;
+    weekly) echo "17 4 * * 2 $SELF auto >/dev/null 2>&1" > "$CRONFILE" ;;
+    *)      rm -f "$CRONFILE" ;;
+  esac
+  /usr/local/sbin/update_cron
+  ;;
+*) sed -n 2,9p "$0"; exit 1 ;;
+esac
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/scripts/init-logs.sh" Mode="0755">
+<INLINE>
+<![CDATA[#!/bin/bash
+
+LOG_DIR="/var/log/cloudflared"
+LOGFILE="$LOG_DIR/cloudflared.log"
+
+mkdir -p "$LOG_DIR"
+
+if [ ! -f "$LOGFILE" ]; then
+    touch "$LOGFILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Cloudflared log initialized." > "$LOGFILE"
+fi
+
+chmod 644 "$LOGFILE"
+chown nobody:users "$LOGFILE"
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/scripts/install.sh" Mode="0755">
+<INLINE>
+<![CDATA[#!/bin/bash
+
+. /usr/local/emhttp/plugins/cloudflared/include/install_functions.sh
+
+verify_requirements() {
+    cloudflared_log "Verifying installation requirements..."
+
+    local required_dirs=(
+        "/boot/config/plugins/cloudflared"
+        "/usr/local/emhttp/plugins/cloudflared"
+    )
+
+    for dir in "${required_dirs[@]}"; do
+        if [ ! -d "$dir" ]; then
+            cloudflared_log "Creating directory: $dir"
+            mkdir -p "$dir"
+        fi
+    done
+}
+
+main() {
+    cloudflared_log "Starting package installation..."
+    verify_requirements
+    cloudflared_create_default_config
+    cloudflared_setup_logging
+    cloudflared_log "Installation completed."
+}
+
+main
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/cloudflared/scripts/restart.sh" Mode="0755">
+<INLINE>
+<![CDATA[#!/bin/bash
+
+DAEMON="cloudflared"
+DAEMON_BIN="/usr/local/sbin/$DAEMON"
+CONFIG="/boot/config/plugins/cloudflared/config/cloudflared.cfg"
+PIDFILE="/var/run/cloudflared.pid"
+LOGFILE="/var/log/cloudflared/cloudflared.log"
+
+mkdir -p "$(dirname $LOGFILE)"
+
+if [ -f "$CONFIG" ]; then
+    source "$CONFIG"
+else
+    echo "Configuration file not found: $CONFIG"
     exit 1
 fi
-chmod +x /usr/local/sbin/cloudflared
-verify_sha256 "/usr/local/sbin/cloudflared" "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42" || exit 1
+
+log() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "$timestamp $1" | tee -a "$LOGFILE"
+    logger -t $DAEMON "$1"
+}
+
+get_pid() {
+    pgrep cloudflared
+}
+
+is_running() {
+    [ -n "$(get_pid)" ]
+}
+
+build_args() {
+    if [ -z "$TUNNEL_TOKEN" ]; then
+        log "ERROR: TUNNEL_TOKEN is required but not set"
+        return 1
+    fi
+
+    echo "tunnel run --token $TUNNEL_TOKEN"
+}
+
+
+start_daemon() {
+    if [ "$SERVICE" != "enabled" ]; then
+        log "Service is disabled, not starting"
+        return 0
+    fi
+
+    if is_running; then
+        log "Service already running"
+        return 0
+    fi
+
+    log "Starting $DAEMON..."
+
+    local args=$(build_args)
+    if [ $? -ne 0 ]; then
+        log "Failed to build arguments"
+        return 1
+    fi
+
+    env \
+        TUNNEL_EDGE_IP_VERSION="$TUNNEL_EDGE_IP_VERSION" \
+        TUNNEL_GRACE_PERIOD="$TUNNEL_GRACE_PERIOD" \
+        TUNNEL_METRICS="$TUNNEL_METRICS" \
+        TUNNEL_LOGLEVEL="$TUNNEL_LOGLEVEL" \
+        TUNNEL_REGION="$TUNNEL_REGION" \
+        TUNNEL_TRANSPORT_PROTOCOL="$TUNNEL_TRANSPORT_PROTOCOL" \
+        TUNNEL_ORIGIN_CERT="$TUNNEL_ORIGIN_CERT" \
+        NO_AUTOUPDATE='true' \
+        nohup $DAEMON_BIN $args >> "$LOGFILE" 2>&1 &
+
+    local pid=$!
+
+    sleep 2
+    if kill -0 $pid 2>/dev/null; then
+        log "Service started successfully (PID: $pid)"
+        echo $pid > "$PIDFILE"
+        return 0
+    else
+        log "Service failed to start"
+        log "Last few lines of log:"
+        tail -n 5 "$LOGFILE" | while read -r line; do
+            log "  $line"
+        done
+        rm -f "$PIDFILE"
+        return 1
+    fi
+}
+
+stop_daemon() {
+    local pids=$(get_pid)
+
+    if [ -n "$pids" ]; then
+        log "Stopping $DAEMON..."
+
+        for pid in $pids; do
+            kill $pid 2>/dev/null
+
+            local timeout=10
+            while [ $timeout -gt 0 ] && kill -0 $pid 2>/dev/null; do
+                sleep 1
+                let timeout=timeout-1
+            done
+
+            if kill -0 $pid 2>/dev/null; then
+                kill -9 $pid 2>/dev/null
+                log "Forced termination of PID $pid"
+            fi
+        done
+
+        log "Service stopped"
+    else
+        log "Service not running"
+    fi
+
+    rm -f "$PIDFILE"
+}
+
+case "$1" in
+    'start')
+        start_daemon
+        ;;
+    'stop')
+        stop_daemon
+        ;;
+    'restart')
+        if [ "$SERVICE" = "enabled" ]; then
+            stop_daemon
+            sleep 1
+            start_daemon
+        else
+            log "Service is disabled, stopping only"
+            stop_daemon
+        fi
+        ;;
+    'status')
+        if is_running; then
+            echo "running"
+            exit 0
+        else
+            echo "stopped"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit $?
+]]>
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1"
+    logger -t cloudflared-install "$1"
+}
+
+# Install cloudflared binary: newest version already staged in /boot, otherwise download and verify the latest release
+DEST=/boot/config/plugins/cloudflared
+newest() { ls -1 $DEST/cloudflared-[0-9]* 2>/dev/null | sed 's/.*cloudflared-//' | sort -V | tail -1; }
+v=$(newest)
+if [ -z "$v" ]; then
+    log "No staged cloudflared binary, downloading the latest release..."
+    /usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh stage || { log "Failed to stage cloudflared"; exit 1; }
+    v=$(newest)
+fi
+[ -n "$v" ] || { log "No cloudflared binary available"; exit 1; }
+expected=$(awk -v f="cloudflared-$v" '$2==f {print $1}' $DEST/sha256sums 2>/dev/null)
+actual=$(sha256sum "$DEST/cloudflared-$v" | awk '{print $1}')
+if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
+    log "SHA256 verification failed for cloudflared-$v"; exit 1
+fi
+cp "$DEST/cloudflared-$v" /usr/local/sbin/cloudflared && chmod +x /usr/local/sbin/cloudflared || { log "Failed to install cloudflared"; exit 1; }
+log "cloudflared $v installed"
 
 log "Creating required directories..."
 mkdir -p /boot/config/plugins/cloudflared/config
@@ -172,9 +1535,7 @@ EOF
     chmod 600 /boot/config/plugins/cloudflared/config/cloudflared.cfg
 fi
 
-# Install package
-log "Installing package..."
-upgradepkg --install-new --reinstall /boot/config/plugins/cloudflared/cloudflared-utils-0.5.0-noarch-1.txz
+ln -sfn images/cloudflared.png /usr/local/emhttp/plugins/cloudflared/cloudflared.png
 
 # Set proper permissions
 log "Setting permissions..."
@@ -183,13 +1544,11 @@ find /usr/local/emhttp/plugins/cloudflared/include -name "*.php" -exec chmod 644
 
 # Create version file with branch information
 mkdir -p /var/local/emhttp/plugins/cloudflared
-echo "VERSION=2026.10.4" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
+echo "VERSION=2026.10.28" > /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 echo "BRANCH=master" >> /var/local/emhttp/plugins/cloudflared/cloudflared.ini
 
-# Cleanup old versions
-log "Cleaning up old versions..."
-rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-utils-*.txz 2>/dev/null | grep -v '0.5.0')
-rm -f $(ls /boot/config/plugins/cloudflared/cloudflared-* 2>/dev/null | grep -v '2026.10.4')
+# Keep the two newest binaries (rollback)
+ls -1 $DEST/cloudflared-[0-9]* 2>/dev/null | sed 's/.*cloudflared-//' | sort -V | head -n -2 | while read o; do rm -f "$DEST/cloudflared-$o"; done
 
 cat > "/etc/logrotate.d/cloudflared" << EOF
 /var/log/cloudflared/cloudflared.log {
@@ -211,11 +1570,17 @@ if grep -q '^SERVICE="enabled"' "/boot/config/plugins/cloudflared/config/cloudfl
     /usr/local/emhttp/plugins/cloudflared/scripts/restart.sh start
 fi
 
+# Scheduled update check (cron) and check at startup, according to the update settings
+/usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh cron
+if grep -q '^UPDATE_CHECK="boot"' /boot/config/plugins/cloudflared/config/update.cfg 2>/dev/null; then
+    nohup bash -c 'sleep 90; /usr/local/emhttp/plugins/cloudflared/scripts/cf-update.sh auto' >/dev/null 2>&1 &
+fi
+
 log "Installation completed successfully"
 echo ""
 echo "----------------------------------------------------"
 echo " Cloudflared has been installed."
-echo " Version: 2026.10.4"
+echo " Plugin version: 2026.10.28"
 echo " Access settings under NetworkServices"
 echo "----------------------------------------------------"
 echo ""
@@ -243,9 +1608,6 @@ pkill -f cloudflared
 
 log "Removing binary..."
 rm -f /usr/local/sbin/cloudflared
-
-log "Removing package..."
-removepkg cloudflared-utils
 
 log "Cleaning up files..."
 rm -rf /usr/local/emhttp/plugins/cloudflared
